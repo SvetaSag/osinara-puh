@@ -158,6 +158,15 @@ describe("memory review model surface", () => {
     expect(schema.safeParse({
       basis: "user_requested", content: "Любит походы", kind: "preference", sourceSequence: "42", subject: { kind: "none" },
     }).success).toBe(false);
+    // A refusal still names the review contract by its stable code, not a bare schema message.
+    for (const wrong of [
+      { basis: "user_requested", sourceSequence: "42" },
+      { sensitivity: "sensitive", sourceSequence: "42" },
+      {},
+    ]) {
+      const refused = schema.safeParse({ content: "Любит походы", kind: "preference", subject: { kind: "none" }, ...wrong });
+      expect(JSON.stringify(refused.error?.issues)).toContain("AGENT_MEMORY_REVIEW_INPUT_INVALID");
+    }
     const required = (z.toJSONSchema(schema as never, { io: "input" }) as { required?: string[] }).required ?? [];
     expect(required).toContain("sourceSequence");
     expect(required).not.toEqual(expect.arrayContaining(["basis"]));

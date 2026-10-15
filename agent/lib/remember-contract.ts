@@ -117,10 +117,12 @@ export function onlyMemoryScope<const Scope extends "family" | "group" | "person
 
 // A silent review writes only normal memory the model itself selected from a named batch message.
 // The two constants are filled, and the message number is required where the model can see it.
+const REVIEW_INPUT_INVALID =
+  "AGENT_MEMORY_REVIEW_INPUT_INVALID: Тихая проверка сохраняет только normal-память, отобранную самой моделью, из сообщения sourceSequence текущего пакета";
 const REVIEW_REMEMBER_FIELDS = {
-  basis: z.literal("agent_inferred").default("agent_inferred"),
-  sensitivity: z.literal("normal").default("normal"),
-  sourceSequence: z.string().regex(TIMELINE_SEQUENCE_PATTERN).refine(
+  basis: z.literal("agent_inferred", { error: REVIEW_INPUT_INVALID }).default("agent_inferred"),
+  sensitivity: z.literal("normal", { error: REVIEW_INPUT_INVALID }).default("normal"),
+  sourceSequence: z.string({ error: REVIEW_INPUT_INVALID }).regex(TIMELINE_SEQUENCE_PATTERN).refine(
     (value) => BigInt(value) <= POSTGRES_BIGINT_MAX,
     "Номер сообщения выходит за допустимые границы",
   ).describe("Номер #sequence одного сообщения текущего пакета проверки"),
