@@ -5,8 +5,9 @@
  * - `memorySubjectSchema`: explicit current-author, verified-ref, label, or subjectless intent.
  * - `memoryThreadSchema`: atomic thread create/attach contract.
  * - `createRememberInputSchema`: the contract narrowed to the scopes one surface may write into and,
- *   for a surface without profile views, to subjects that need no verified reference; a silent
- *   review gets its own constants filled and its source required.
+ *   for a surface without profile views, to subjects that need no verified reference.
+ * - `onlyMemoryScope`: the scope field of a surface that may write into exactly one scope.
+ * - `createReviewRememberInputSchema`: the silent review's contract: constants filled, source required.
  * - `rememberInputSchema`: trusted personal/family/group tool input.
  * - `externalRememberInputSchema`: exact external-group presentation contract.
  * - `RememberInput`: parsed trusted tool input type.
@@ -116,7 +117,7 @@ export function onlyMemoryScope<const Scope extends "family" | "group" | "person
 
 // A silent review writes only normal memory the model itself selected from a named batch message.
 // The two constants are filled, and the message number is required where the model can see it.
-const REVIEW_FIELDS = {
+const REVIEW_REMEMBER_FIELDS = {
   basis: z.literal("agent_inferred").default("agent_inferred"),
   sensitivity: z.literal("normal").default("normal"),
   sourceSequence: z.string().regex(TIMELINE_SEQUENCE_PATTERN).refine(
@@ -125,12 +126,11 @@ const REVIEW_FIELDS = {
   ).describe("Номер #sequence одного сообщения текущего пакета проверки"),
 };
 
-export function createRememberInputSchema(
-  scope: z.ZodType<"family" | "group" | "personal", "family" | "group" | "personal" | undefined>,
-  options: { readonly review?: boolean; readonly verifiedRefs?: boolean } = {},
-) {
-  const subject = options.verifiedRefs === false ? modelFacingUnverifiedMemorySubjectSchema : modelFacingMemorySubjectSchema;
-  return z.object({
+type RememberScopeField = z.ZodType<"family" | "group" | "personal", "family" | "group" | "personal" | undefined>;
+
+function rememberFields(scope: RememberScopeField, verifiedRefs: boolean) {
+  const subject = verifiedRefs ? modelFacingMemorySubjectSchema : modelFacingUnverifiedMemorySubjectSchema;
+  return {
     attribute: z.string().trim().min(1).max(MEMORY_ATTRIBUTE_MAX_CHARACTERS).optional().describe(
       "Короткое имя свойства субъекта, о котором запись: «кофе», «место работы», «размер обуви». Не значение свойства и не пересказ содержания. Ставь его, когда свойство со временем меняется и новая запись отменяет прежнюю; новая запись того же субъекта с тем же именем переводит прежнюю в историю. Не ставь общее имя вроде «еда» — оно уберёт из активной памяти независимые сведения. У записи без субъекта (subject.kind=none) имя свойства действует на всю область памяти, поэтому там оно должно быть особенно точным. Для kind=episode поле недопустимо",
     ),
@@ -154,47 +154,75 @@ export function createRememberInputSchema(
     ),
     subject: subject.describe("Кому или чему принадлежит утверждение"),
     thread: memoryThreadSchema.optional().describe("Необязательное атомарное создание нити или attach"),
-    ...(options.review === true ? REVIEW_FIELDS : {}),
-  }).strict().superRefine((input, context) => {
-    const create = input.thread?.action === "create" ? input.thread : null;
-    if (create?.identity === "project" && input.subject.kind !== "none") {
-      context.addIssue({
-        code: "custom",
-        message: "AGENT_MEMORY_THREAD_INPUT_INVALID: Project-thread требует subject.kind=none",
-        path: ["subject"],
-      });
-    }
-    if (input.subject.kind === "label" && input.thread !== undefined) {
-      context.addIssue({
-        code: "custom",
-        message: "AGENT_MEMORY_THREAD_INPUT_INVALID: Текстовая метка не задаёт identity нити",
-        path: ["subject"],
-      });
-    }
-    if (input.scope === "personal" && create?.identity === "project") {
-      context.addIssue({
-        code: "custom",
-        message: "AGENT_MEMORY_THREAD_INPUT_INVALID: Project identity недоступна в личной записи",
-        path: ["thread", "identity"],
-      });
-    }
-    if (input.attribute !== undefined && input.kind === "episode") {
-      context.addIssue({
-        code: "custom",
-        message:
-          "AGENT_MEMORY_ATTRIBUTE_INVALID: Событие не имеет свойства, которое меняется со временем",
-        path: ["attribute"],
-      });
-    }
-    if (input.sourceSequence !== undefined && input.sensitivity === "sensitive") {
-      context.addIssue({
-        code: "custom",
-        message:
-          "AGENT_MEMORY_INPUT_INVALID: Чувствительное сведение можно сохранить только из текущего сообщения его автора",
-        path: ["sourceSequence"],
-      });
-    }
-  });
+  };
+}
+
+/** What the cross-field checks read; every remember contract variant produces at least this. */
+interface RememberCheckInput {
+  readonly attribute?: string;
+  readonly kind: string;
+  readonly scope: string;
+  readonly sensitivity: string;
+  readonly sourceSequence?: string;
+  readonly subject: { readonly kind: string };
+  readonly thread?: { readonly action: string; readonly identity?: string };
+}
+
+function checkRememberInput(input: RememberCheckInput, context: z.RefinementCtx): void {
+  const create = input.thread?.action === "create" ? input.thread : null;
+  if (create?.identity === "project" && input.subject.kind !== "none") {
+    context.addIssue({
+      code: "custom",
+      message: "AGENT_MEMORY_THREAD_INPUT_INVALID: Project-thread требует subject.kind=none",
+      path: ["subject"],
+    });
+  }
+  if (input.subject.kind === "label" && input.thread !== undefined) {
+    context.addIssue({
+      code: "custom",
+      message: "AGENT_MEMORY_THREAD_INPUT_INVALID: Текстовая метка не задаёт identity нити",
+      path: ["subject"],
+    });
+  }
+  if (input.scope === "personal" && create?.identity === "project") {
+    context.addIssue({
+      code: "custom",
+      message: "AGENT_MEMORY_THREAD_INPUT_INVALID: Project identity недоступна в личной записи",
+      path: ["thread", "identity"],
+    });
+  }
+  if (input.attribute !== undefined && input.kind === "episode") {
+    context.addIssue({
+      code: "custom",
+      message:
+        "AGENT_MEMORY_ATTRIBUTE_INVALID: Событие не имеет свойства, которое меняется со временем",
+      path: ["attribute"],
+    });
+  }
+  if (input.sourceSequence !== undefined && input.sensitivity === "sensitive") {
+    context.addIssue({
+      code: "custom",
+      message:
+        "AGENT_MEMORY_INPUT_INVALID: Чувствительное сведение можно сохранить только из текущего сообщения его автора",
+      path: ["sourceSequence"],
+    });
+  }
+}
+
+export function createRememberInputSchema(
+  scope: RememberScopeField,
+  options: { readonly verifiedRefs: boolean } = { verifiedRefs: true },
+) {
+  return z.object(rememberFields(scope, options.verifiedRefs)).strict().superRefine(checkRememberInput);
+}
+
+/**
+ * A silent review run of one scope: no profile views, so no verified references; its scope and the
+ * two constants filled; its source message required.
+ */
+export function createReviewRememberInputSchema(scope: "family" | "group" | "personal") {
+  return z.object({ ...rememberFields(onlyMemoryScope(scope), false), ...REVIEW_REMEMBER_FIELDS })
+    .strict().superRefine(checkRememberInput);
 }
 
 export const rememberInputSchema = createRememberInputSchema(

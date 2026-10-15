@@ -274,6 +274,7 @@ const TOOL_DESCRIPTION = [
   "В личном и семейном чатах все установленные скиллы доступны всегда. Внешняя группа получает только сохранённый skillAllowlist, включая скиллы семьи. Включение скилла, которому нужен Bash, также сохраняет право bash и включает публичную сеть в изолированном окружении группы; отзыв bash отключает зависимые скиллы. Изменение прав останавливает текущие процессы группы, но не удаляет её файлы.",
   "Для внешней группы messageMode=owner_only сохраняет общую timeline, но разрешает запуск модели только текущему владельцу Osinara; Telegram admin-права владельца не заменяют.",
   "Register передаёт вложенный объект registration, остальные actions только плоские поля. Update_policy содержит ровно action, telegramChatId, messageMode и полный toolAllowlist; type и title не передавай: {\"action\":\"register\",\"registration\":{\"type\":\"external\",\"telegramChatId\":\"-1001234567890\",\"title\":\"Внешняя группа\",\"messageMode\":\"owner_only\",\"toolAllowlist\":[\"search_memories\"]}} и {\"action\":\"update_policy\",\"telegramChatId\":\"-1001234567890\",\"messageMode\":\"all\",\"toolAllowlist\":[\"search_memories\"]}.",
+  "После ошибки входных данных исправь payload по тексту ошибки и повтори не более одного раза; при повторной ошибке остановись и уточни данные.",
 ].join(" ");
 
 export default defineTool({

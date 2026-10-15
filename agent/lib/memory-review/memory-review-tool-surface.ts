@@ -14,7 +14,7 @@ import readMemoryThread from "../tools/read_memory_thread.js";
 import remember from "../tools/remember.js";
 import searchMemories from "../tools/search_memories.js";
 import searchMemoryThreads from "../tools/search_memory_threads.js";
-import { createRememberInputSchema, onlyMemoryScope } from "../remember-contract.js";
+import { createReviewRememberInputSchema } from "../remember-contract.js";
 import type { MemoryScope } from "../memory-context.js";
 import { authorizeCurrentExternalGroupCapability } from "../tool-policy/external-group-live-policy.js";
 import { resolveExternalGroupPolicyIdentity } from "../tool-policy/external-group-policy.js";
@@ -29,7 +29,7 @@ type AnyTool = ToolDefinition<any, any>;
  */
 function reviewRememberSchema(scope: MemoryScope) {
   // Review turns get no profile views: a verified_ref there was refused on every call (#289).
-  return createRememberInputSchema(onlyMemoryScope(scope), { review: true, verifiedRefs: false });
+  return createReviewRememberInputSchema(scope);
 }
 
 
