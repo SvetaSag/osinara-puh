@@ -17,6 +17,10 @@ const TOOL_ACTION_LABELS: Readonly<Record<string, string>> = {
 };
 
 const MANAGED_ACTION_LABELS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  manage_external_group_schedule: {
+    create: "создать автоматизацию, которая будет по расписанию публиковать результат во внешнюю Telegram-группу",
+    update: "изменить автоматизацию, публикующую результат во внешнюю Telegram-группу",
+  },
   manage_google_workspace_connection: {
     disconnect: "отключить Google Workspace от текущей области",
   },
@@ -138,6 +142,26 @@ function approvalParameterLines(toolName: string, input: Record<string, unknown>
       ];
     case "remove_group_file":
       return line("Путь", "path");
+    case "manage_external_group_schedule": {
+      // An update carries only the fields it changes, so only those are shown.
+      const firstRun = value("firstRunAt");
+      const timezone = value("timezone");
+      const capabilities = Array.isArray(input.capabilityAllowlist)
+        ? input.capabilityAllowlist.filter((item): item is string => typeof item === "string").join(", ")
+        : null;
+      const days = input.historyWindowDays;
+      return [
+        ...line("Название", "title"),
+        ...line("Telegram chat ID", "telegramChatId"),
+        ...(firstRun ? [`Первый запуск: ${firstRun}${timezone ? ` (${timezone})` : ""}`] : []),
+        ...line("Следующий запуск", "nextRunAt"),
+        ...(input.recurrence && typeof input.recurrence === "object" ? [`Повторение: ${JSON.stringify(input.recurrence)}`] : []),
+        ...line("Сценарий", "scenarioPrompt"),
+        ...(capabilities === null ? [] : [`Дополнительные инструменты: ${capabilities || "нет"}`]),
+        ...(typeof days === "number" ? [`История группы: за ${days} дн.`] : []),
+        ...(typeof input.maxRuns === "number" ? [`Число запусков: ${input.maxRuns}`] : []),
+      ];
+    }
     default:
       return [];
   }
