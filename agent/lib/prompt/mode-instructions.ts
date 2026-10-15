@@ -15,7 +15,6 @@ import { externalGroupCapabilityInstructions } from "../tool-policy/external-gro
 import type { ExternalGroupToolName } from "../tool-policy/group-tool-catalog.js";
 import { TURN_INTERJECTION_RULES } from "../turn-interjection/turn-interjection-block.js";
 
-import type { GroupSafeSkillName } from "../group-skills/group-skill-catalog.js";
 import {
   CURRENT_MESSAGE_REPLY_CONTRACT,
   IMAGE_INSPECTION_CONTRACT,
@@ -76,7 +75,6 @@ export type ModeInstructionsInput =
       reactions?: readonly string[] | null;
       scheduledHistory?: boolean;
       scheduledRun?: boolean;
-      skills: ReadonlySet<GroupSafeSkillName>;
       /** A subagent child answers its parent, never the chat, so it gets no delivery outcomes. */
       subagentTurn?: boolean;
   };
@@ -256,7 +254,6 @@ function externalMemorySection(
 
 function externalInstructions(
   capabilities: ReadonlySet<ExternalGroupToolName>,
-  skills: ReadonlySet<GroupSafeSkillName>,
   reactions: readonly string[] | null,
   includeApplicationCore = true,
   scheduledRun = false,
@@ -359,11 +356,7 @@ ${GROUP_TIMELINE_TRUST}`,
     reminders ? GROUP_REMINDER_RULES : null,
     reminders ? GROUP_SCENARIO_RULES : null,
     channelAuthored ? CHANNEL_AUTHORED_REMINDER_NOTICE : null,
-    externalGroupCapabilityInstructions(surfaceCapabilities, skills, {
-      includeApplicationCore,
-      scheduledHistory,
-      scheduledRun,
-    }),
+    externalGroupCapabilityInstructions({ includeApplicationCore }),
   ]);
 }
 
@@ -375,7 +368,6 @@ export function modeInstructions(input: ModeInstructionsInput): string {
   if (input.environment === "family") return familyInstructions(scheduledRun, reactions, subagentTurn);
   return externalInstructions(
     input.capabilities,
-    input.skills,
     reactions,
     input.includeApplicationCore,
     scheduledRun,
