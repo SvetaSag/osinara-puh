@@ -19,7 +19,7 @@ export default defineTool({
   replaySafe: true,
   description: [
     "Постранично показать предстоящие и приостановленные личные и семейные напоминания текущего участника, ближайшие первыми.",
-    "Уже отправленные напоминания здесь не показываются; доставленные в этот чат ищи в list_proactive_deliveries с sourceKind:\"reminder\".",
+    "Отправленные здесь не показываются: ищи их в list_proactive_deliveries с sourceKind:\"reminder\".",
     "Результат: {items,nextCursor}; если nextCursor не null, передай его без изменений для следующей страницы.",
   ].join(" "),
   inputSchema: z.object({
