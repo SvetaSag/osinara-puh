@@ -5,13 +5,14 @@
  * - `memorySubjectSchema`: explicit current-author, verified-ref, label, or subjectless intent.
  * - `memoryThreadSchema`: atomic thread create/attach contract.
  * - `createRememberInputSchema`: the contract narrowed to the scopes one surface may write into and,
- *   for a surface without profile views, to subjects that need no verified reference.
+ *   for a surface without profile views, to subjects that need no verified reference; a silent
+ *   review gets its own constants filled and its source required.
  * - `rememberInputSchema`: trusted personal/family/group tool input.
  * - `externalRememberInputSchema`: exact external-group presentation contract.
  * - `RememberInput`: parsed trusted tool input type.
  *
  * Key constructs:
- * - `modelFacingMemorySubjectSchema`: normalizes the active provider's serialized nested subject.
+ * - `modelFacingMemorySubjectSchema`: also accepts a nested subject a provider sent as a JSON string.
  */
 import { z } from "zod";
 
@@ -29,31 +30,6 @@ const SUBJECT_LABEL_MAX_CHARACTERS = 200;
 const TIMELINE_SEQUENCE_PATTERN = /^[1-9]\d*$/u;
 const POSTGRES_BIGINT_MAX = 9_223_372_036_854_775_807n;
 export const MEMORY_SUBJECT_REF_PATTERN = /^subj_[0-9a-f]{32}$/u;
-
-/*
- * The active OpenAI-compatible provider can emit a nested tool argument as a
- * compact JSON string. Match the complete subject grammar before JSON.parse so
- * malformed input remains a normal schema failure and parsing cannot throw.
- */
-const JSON_WHITESPACE_PATTERN = String.raw`[ \t\r\n]*`;
-const JSON_STRING_PATTERN = String.raw`"(?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"`;
-const SERIALIZED_UNVERIFIED_SUBJECT_VARIANTS = [
-  String.raw`"kind"${JSON_WHITESPACE_PATTERN}:${JSON_WHITESPACE_PATTERN}"current_author"`,
-  String.raw`"kind"${JSON_WHITESPACE_PATTERN}:${JSON_WHITESPACE_PATTERN}"none"`,
-  String.raw`"kind"${JSON_WHITESPACE_PATTERN}:${JSON_WHITESPACE_PATTERN}"label"${JSON_WHITESPACE_PATTERN},${JSON_WHITESPACE_PATTERN}"label"${JSON_WHITESPACE_PATTERN}:${JSON_WHITESPACE_PATTERN}${JSON_STRING_PATTERN}`,
-  String.raw`"label"${JSON_WHITESPACE_PATTERN}:${JSON_WHITESPACE_PATTERN}${JSON_STRING_PATTERN}${JSON_WHITESPACE_PATTERN},${JSON_WHITESPACE_PATTERN}"kind"${JSON_WHITESPACE_PATTERN}:${JSON_WHITESPACE_PATTERN}"label"`,
-];
-const SERIALIZED_VERIFIED_REF_SUBJECT_VARIANTS = [
-  String.raw`"kind"${JSON_WHITESPACE_PATTERN}:${JSON_WHITESPACE_PATTERN}"verified_ref"${JSON_WHITESPACE_PATTERN},${JSON_WHITESPACE_PATTERN}"subjectRef"${JSON_WHITESPACE_PATTERN}:${JSON_WHITESPACE_PATTERN}${JSON_STRING_PATTERN}`,
-  String.raw`"subjectRef"${JSON_WHITESPACE_PATTERN}:${JSON_WHITESPACE_PATTERN}${JSON_STRING_PATTERN}${JSON_WHITESPACE_PATTERN},${JSON_WHITESPACE_PATTERN}"kind"${JSON_WHITESPACE_PATTERN}:${JSON_WHITESPACE_PATTERN}"verified_ref"`,
-];
-
-function serializedSubjectPattern(variants: readonly string[]): RegExp {
-  return new RegExp(
-    String.raw`^${JSON_WHITESPACE_PATTERN}\{${JSON_WHITESPACE_PATTERN}(?:${variants.join("|")})${JSON_WHITESPACE_PATTERN}\}${JSON_WHITESPACE_PATTERN}$`,
-    "u",
-  );
-}
 
 const currentAuthorSubjectSchema = z.object({
   kind: z.literal("current_author").describe("Сведение относится к автору текущего сообщения"),
@@ -81,33 +57,31 @@ const unverifiedMemorySubjectSchema = z.discriminatedUnion("kind", [
   noneSubjectSchema,
 ]);
 
-function modelFacingSubject<T extends typeof memorySubjectSchema | typeof unverifiedMemorySubjectSchema>(
-  schema: T,
-  serializedPattern: RegExp,
-) {
+/*
+ * A provider on the OpenAI-compatible transport can send a nested tool argument as a compact JSON
+ * string. Such a string is parsed and must then pass the same strict subject schema; malformed JSON
+ * stays an ordinary schema failure. The check runs here instead of as a pattern in the schema, which
+ * the model would otherwise read with every request.
+ */
+function modelFacingSubject<T extends typeof memorySubjectSchema | typeof unverifiedMemorySubjectSchema>(schema: T) {
   return z.union([
     schema,
     z.string()
-      .regex(serializedPattern)
-      .transform((value) => JSON.parse(value) as unknown)
+      .transform((value, context) => {
+        try {
+          return JSON.parse(value) as unknown;
+        } catch {
+          context.addIssue({ code: "custom", message: "subject передаётся объектом, например {\"kind\":\"current_author\"}" });
+          return z.NEVER;
+        }
+      })
       .pipe(schema),
   ]);
 }
 
-const modelFacingMemorySubjectSchema = modelFacingSubject(
-  memorySubjectSchema,
-  // Keeps the conversation contract's pattern text byte-identical to what the model already reads.
-  serializedSubjectPattern([
-    ...SERIALIZED_UNVERIFIED_SUBJECT_VARIANTS.slice(0, 2),
-    ...SERIALIZED_VERIFIED_REF_SUBJECT_VARIANTS,
-    ...SERIALIZED_UNVERIFIED_SUBJECT_VARIANTS.slice(2),
-  ]),
-);
-// The serialized pattern is part of the JSON schema the model reads, so it must not name verified_ref either.
-const modelFacingUnverifiedMemorySubjectSchema = modelFacingSubject(
-  unverifiedMemorySubjectSchema,
-  serializedSubjectPattern(SERIALIZED_UNVERIFIED_SUBJECT_VARIANTS),
-);
+const modelFacingMemorySubjectSchema = modelFacingSubject(memorySubjectSchema);
+// The schema the model reads must not name verified_ref on a surface that cannot resolve it.
+const modelFacingUnverifiedMemorySubjectSchema = modelFacingSubject(unverifiedMemorySubjectSchema);
 
 const threadRoleSchema = z.enum([
   "goal", "constraint", "method", "decision", "episode", "outcome", "lesson", "open_loop",
@@ -132,11 +106,30 @@ export const memoryThreadSchema = z.discriminatedUnion("action", [
   ),
 ]);
 
+/**
+ * A surface that may write into exactly one scope fills it itself: the model left that one-value
+ * field out in 9 of 12 rejected calls (03-15.10.2026). Any other scope is still refused.
+ */
+export function onlyMemoryScope<const Scope extends "family" | "group" | "personal">(scope: Scope) {
+  return z.literal(scope).default(scope);
+}
+
+// A silent review writes only normal memory the model itself selected from a named batch message.
+// The two constants are filled, and the message number is required where the model can see it.
+const REVIEW_FIELDS = {
+  basis: z.literal("agent_inferred").default("agent_inferred"),
+  sensitivity: z.literal("normal").default("normal"),
+  sourceSequence: z.string().regex(TIMELINE_SEQUENCE_PATTERN).refine(
+    (value) => BigInt(value) <= POSTGRES_BIGINT_MAX,
+    "Номер сообщения выходит за допустимые границы",
+  ).describe("Номер #sequence одного сообщения текущего пакета проверки"),
+};
+
 export function createRememberInputSchema(
-  scope: z.ZodType<"family" | "group" | "personal">,
-  options: { readonly verifiedRefs: boolean } = { verifiedRefs: true },
+  scope: z.ZodType<"family" | "group" | "personal", "family" | "group" | "personal" | undefined>,
+  options: { readonly review?: boolean; readonly verifiedRefs?: boolean } = {},
 ) {
-  const subject = options.verifiedRefs ? modelFacingMemorySubjectSchema : modelFacingUnverifiedMemorySubjectSchema;
+  const subject = options.verifiedRefs === false ? modelFacingUnverifiedMemorySubjectSchema : modelFacingMemorySubjectSchema;
   return z.object({
     attribute: z.string().trim().min(1).max(MEMORY_ATTRIBUTE_MAX_CHARACTERS).optional().describe(
       "Короткое имя свойства субъекта, о котором запись: «кофе», «место работы», «размер обуви». Не значение свойства и не пересказ содержания. Ставь его, когда свойство со временем меняется и новая запись отменяет прежнюю; новая запись того же субъекта с тем же именем переводит прежнюю в историю. Не ставь общее имя вроде «еда» — оно уберёт из активной памяти независимые сведения. У записи без субъекта (subject.kind=none) имя свойства действует на всю область памяти, поэтому там оно должно быть особенно точным. Для kind=episode поле недопустимо",
@@ -161,6 +154,7 @@ export function createRememberInputSchema(
     ),
     subject: subject.describe("Кому или чему принадлежит утверждение"),
     thread: memoryThreadSchema.optional().describe("Необязательное атомарное создание нити или attach"),
+    ...(options.review === true ? REVIEW_FIELDS : {}),
   }).strict().superRefine((input, context) => {
     const create = input.thread?.action === "create" ? input.thread : null;
     if (create?.identity === "project" && input.subject.kind !== "none") {
@@ -206,5 +200,5 @@ export function createRememberInputSchema(
 export const rememberInputSchema = createRememberInputSchema(
   z.enum(["personal", "family", "group"]),
 );
-export const externalRememberInputSchema = createRememberInputSchema(z.literal("group"));
+export const externalRememberInputSchema = createRememberInputSchema(onlyMemoryScope("group"));
 export type RememberInput = z.infer<typeof rememberInputSchema>;

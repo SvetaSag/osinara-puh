@@ -75,7 +75,6 @@ const TOOL_DESCRIPTION = [
   "Для action=approve обязательны action, invitationId, candidateTelegramUserId и candidateDisplayName: {\"action\":\"approve\",\"invitationId\":\"<UUID из list_pending_family_invitations>\",\"candidateTelegramUserId\":\"123456789\",\"candidateDisplayName\":\"Анна\"}.",
   "invitationId должен быть UUID из list_pending_family_invitations; candidateTelegramUserId и candidateDisplayName должны точно соответствовать выбранному кандидату.",
   "Не угадывай обязательные значения и не подставляй defaults: если их нет, снова запроси list_pending_family_invitations или спроси владельца.",
-  "После ошибки входных данных исправь payload по тексту ошибки и повтори не более одного раза; при повторной ошибке остановись и уточни данные.",
 ].join(" ");
 
 export default defineTool({

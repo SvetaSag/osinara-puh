@@ -18,7 +18,6 @@ import type { RegisteredGroupType } from "../family-access.js";
 import { SKILL_NAME_PATTERN } from "../../runtime/skills/package-validation.js";
 import { familySkillRepository } from "../family-skills/family-skill-repository.js";
 import { grantableSkillNames, isWorkingSkill, skillGrantCatalog, skillNeedsBash } from "../family-skills/skill-grants.js";
-import { GROUP_SAFE_SKILL_NAMES } from "../group-skills/group-skill-catalog.js";
 import { telegramGroupAdministrationRepository } from "../telegram-group-administration-repository.js";
 import {
   GROUP_TITLE_MAX_LENGTH,
@@ -87,8 +86,7 @@ const manageTelegramGroupSchema = z.object({
     "Передавайте только при action=register. Для остальных actions полностью пропустите registration.",
   ),
   skillAllowlist: z.array(z.string()).optional().describe(
-    `Передавайте только при action=update_skills. Встроенные skills: ${GROUP_SAFE_SKILL_NAMES.join(", ")}; ` +
-      "также включённые скиллы семьи из availableSafeSkills ответа status; пустой массив отзывает все skills.",
+    "Передавайте только при action=update_skills: полный список имён из availableSafeSkills ответа status; пустой массив отзывает все skills.",
   ),
   telegramChatId: z.string().optional().describe(
     "Точный отрицательный ID обязателен для start_new_context, update_policy, update_skills и remove. Для status не передавайте; для register используйте registration.telegramChatId.",
@@ -276,7 +274,6 @@ const TOOL_DESCRIPTION = [
   "В личном и семейном чатах все установленные скиллы доступны всегда. Внешняя группа получает только сохранённый skillAllowlist, включая скиллы семьи. Включение скилла, которому нужен Bash, также сохраняет право bash и включает публичную сеть в изолированном окружении группы; отзыв bash отключает зависимые скиллы. Изменение прав останавливает текущие процессы группы, но не удаляет её файлы.",
   "Для внешней группы messageMode=owner_only сохраняет общую timeline, но разрешает запуск модели только текущему владельцу Osinara; Telegram admin-права владельца не заменяют.",
   "Register передаёт вложенный объект registration, остальные actions только плоские поля. Update_policy содержит ровно action, telegramChatId, messageMode и полный toolAllowlist; type и title не передавай: {\"action\":\"register\",\"registration\":{\"type\":\"external\",\"telegramChatId\":\"-1001234567890\",\"title\":\"Внешняя группа\",\"messageMode\":\"owner_only\",\"toolAllowlist\":[\"search_memories\"]}} и {\"action\":\"update_policy\",\"telegramChatId\":\"-1001234567890\",\"messageMode\":\"all\",\"toolAllowlist\":[\"search_memories\"]}.",
-  "После ошибки входных данных исправь payload по тексту ошибки и повтори не более одного раза; при повторной ошибке остановись и уточни данные.",
 ].join(" ");
 
 export default defineTool({
