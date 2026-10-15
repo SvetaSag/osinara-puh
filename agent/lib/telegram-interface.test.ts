@@ -174,7 +174,9 @@ describe("Telegram interface localization", () => {
     expect(request.prompt).toContain("Название: Недельная выжимка");
     expect(request.prompt).toContain("Telegram chat ID: -1001");
     expect(request.prompt).toContain("Первый запуск: 2026-10-20T09:00:00+03:00 (Europe/Moscow)");
-    expect(request.prompt).toContain('Повторение: {"daysOfWeek":[1],"interval":1,"kind":"weekly"}');
+    expect(request.prompt).toContain("Повторение: каждую неделю по дням: пн");
+    expect(request.prompt).toContain("Исходная просьба: Каждый понедельник присылай выжимку");
+    expect(request.prompt).toContain("Число запусков: без ограничения");
     expect(request.prompt).toContain("Сценарий: Собери выжимку обсуждения за неделю и пришли HTML-файлом.");
     expect(request.prompt).toContain("Дополнительные инструменты: send_workspace_file");
     expect(request.prompt).toContain("История группы: за 7 дн.");
@@ -185,7 +187,10 @@ describe("Telegram interface localization", () => {
     const request = localizeTelegramInputRequest({
       action: {
         callId: "call-1",
-        input: { action: "update", id: "00000000-0000-4000-8000-000000000001", scenarioPrompt: "Теперь только итоги" },
+        input: {
+          action: "update", historyWindowDays: null, id: "00000000-0000-4000-8000-000000000001",
+          recurrence: { interval: 3, kind: "hourly" }, scenarioPrompt: "Теперь только итоги", userRequest: "Опубликуй дословно",
+        },
         kind: "tool-call" as const,
         toolName: "manage_external_group_schedule",
       },
@@ -198,6 +203,10 @@ describe("Telegram interface localization", () => {
 
     expect(request.prompt).toContain("изменить автоматизацию");
     expect(request.prompt).toContain("Сценарий: Теперь только итоги");
+    // The run receives userRequest as the person's own request, so a changed one is always shown.
+    expect(request.prompt).toContain("Исходная просьба: Опубликуй дословно");
+    expect(request.prompt).toContain("Повторение: раз в 3 часа");
+    expect(request.prompt).toContain("История группы: не читается");
     expect(request.prompt).not.toContain("Название:");
   });
 
