@@ -17,20 +17,20 @@ describe("externalGroupCapabilityInstructions", () => {
     const markdown = externalGroupCapabilityInstructions({ includeApplicationCore: true });
 
     expect(markdown).toContain("<external_group_capabilities>");
-    expect(markdown).toMatch(/только те инструменты, которые переданы в этом запросе/u);
+    expect(markdown).toMatch(/only the tools sent with this request/u);
     expect(markdown).toMatch(/Available skills/u);
-    expect(markdown).toMatch(/не вызывай, не предлагай и не утверждай/iu);
+    expect(markdown).toMatch(/do not call, offer or claim/iu);
     expect(markdown).not.toMatch(/`[a-z_]+`/u);
     expect(markdown).not.toMatch(/[—–«»]/u);
   });
 
   it("describes delegation only when the application core is issued", () => {
-    expect(externalGroupCapabilityInstructions({ includeApplicationCore: true })).toContain("делегировать");
-    expect(externalGroupCapabilityInstructions({ includeApplicationCore: false })).not.toContain("делегировать");
+    expect(externalGroupCapabilityInstructions({ includeApplicationCore: true })).toContain("delegate");
+    expect(externalGroupCapabilityInstructions({ includeApplicationCore: false })).not.toContain("delegate");
   });
 
   it("keeps a granted skill from carrying someone else's authorization", () => {
     expect(externalGroupCapabilityInstructions({ includeApplicationCore: false }))
-      .toContain("Разрешённый скилл не предоставляет чужую авторизацию");
+      .toContain("A permitted skill does not grant anyone else's authorization");
   });
 });

@@ -17,14 +17,14 @@ export interface ExternalGroupCapabilityInstructionOptions {
 export function externalGroupCapabilityInstructions(options: ExternalGroupCapabilityInstructionOptions): string {
   return [
     "<external_group_capabilities>",
-    "# Возможности текущей внешней группы",
+    "# Capabilities of the current external group",
     "",
-    "В этом ходе тебе доступны только те инструменты, которые переданы в этом запросе, и только скиллы из раздела Available skills. Не вызывай, не предлагай и не утверждай, что можешь использовать что-то сверх них. Ограничения, записанные в описании и схеме инструмента, тоже часть разрешения: например, разрешённое действие не разрешает соседние.",
+    "In this turn you have only the tools sent with this request and only the skills from the Available skills section. Do not call, offer or claim that you can use anything beyond them. The limits written in a tool's description and schema are part of the permission too: for example, a permitted action does not permit the neighbouring ones.",
     ...(options.includeApplicationCore
-      ? ["", "Основной агент может делегировать сложную часть подзадачей; дочерний агент получает те же границы данных и разрешения, но не делегирует повторно и не сохраняет долговременную память."]
+      ? ["", "The main agent may delegate a complex part as a subtask; the child agent gets the same data boundaries and permissions, but does not delegate again and does not save long-term memory."]
       : []),
     "",
-    "Разрешённый скилл не предоставляет чужую авторизацию. Если ему нужно внешнее подключение, которого здесь нет, сообщи об этом; личные и семейные подключения в группу не передаются.",
+    "A permitted skill does not grant anyone else's authorization. If it needs an external connection that is not available here, say so; personal and family connections are not passed to the group.",
     "</external_group_capabilities>",
   ].join("\n");
 }

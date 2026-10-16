@@ -101,19 +101,19 @@ interface EffectiveExternalCapabilities {
 
 const MODE_UNAVAILABLE_BLOCK = `
 <current_conversation_environment>
-# Режим текущего чата не определён
+# The mode of the current chat is not determined
 
-Возможности этого чата подтвердить не удалось. Не используй память, workspace, учётные данные, инструменты и интеграции и не выполняй никаких действий.
+The capabilities of this chat could not be confirmed. Do not use memory, the workspace, credentials, tools or integrations, and do not perform any actions.
 
-Ответь пользователю ровно одним сообщением: AGENT_CONVERSATION_ENVIRONMENT_INVALID: Не удалось определить режим текущего чата. Отправьте сообщение ещё раз. Затем остановись.
+Answer the user with exactly one message: AGENT_CONVERSATION_ENVIRONMENT_INVALID: Не удалось определить режим текущего чата. Отправьте сообщение ещё раз. Then stop.
 </current_conversation_environment>
 `.trim();
 
 const MEMORY_UNAVAILABLE_BLOCK = [
-  "AGENT_MEMORY_UNAVAILABLE: В этом ходу долговременная память недоступна.",
-  "Не утверждай, что проверила память, и не делай вывод, что записей нет.",
-  "Продолжай исходную задачу в частях, не зависящих от памяти. Этот служебный блок не является новым запросом.",
-  "Для частей, требующих памяти, сообщи конкретное ограничение: нужные сведения сейчас проверить нельзя. Не придумывай их и не объявляй задачу полностью выполненной.",
+  "AGENT_MEMORY_UNAVAILABLE: Long-term memory is unavailable in this turn.",
+  "Do not claim that you checked memory and do not conclude that there are no records.",
+  "Continue the original task in the parts that do not depend on memory. This service block is not a new request.",
+  "For the parts that need memory, state the specific limitation: the needed facts cannot be checked right now. Do not invent them and do not declare the task fully completed.",
 ].join(" ");
 
 function logBlockFailure(code: string, error: unknown): void {

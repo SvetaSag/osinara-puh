@@ -77,8 +77,8 @@ describe("formatTurnInterjectionBlock", () => {
 
 describe("alreadySeenTurnContext", () => {
   it("tells whether the agent saw the content or only a notice", () => {
-    expect(alreadySeenTurnContext("text")).toContain("уже видел");
-    expect(alreadySeenTurnContext("voice")).toContain("уже видел");
-    expect(alreadySeenTurnContext("notice")).toContain("впервые");
+    expect(alreadySeenTurnContext("text")).toContain("already saw");
+    expect(alreadySeenTurnContext("voice")).toContain("already saw");
+    expect(alreadySeenTurnContext("notice")).toContain("for the first time");
   });
 });
