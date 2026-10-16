@@ -69,7 +69,6 @@ export interface AutomaticMemorySelection {
   diagnostics: MemoryRetrievalBranchDiagnostics;
   /** The query vector by pieces; empty when the service was unreachable or no search ran. */
   embeddings: readonly (readonly number[])[];
-  relatedClaimIds: string[];
   selected: SelectedMemory[];
   semanticBranchAvailable: boolean;
 }
@@ -131,7 +130,7 @@ export async function selectMemoriesAutomatically(
   if (isSmallTalkMessage(prepared)) {
     return {
       abstained: true, dateWindow: null,
-      diagnostics: SILENT_SELECTION_DIAGNOSTICS, embeddings: [], relatedClaimIds: [], selected: [],
+      diagnostics: SILENT_SELECTION_DIAGNOSTICS, embeddings: [], selected: [],
       semanticBranchAvailable: true,
     };
   }
@@ -166,8 +165,6 @@ export async function selectMemoriesAutomatically(
     dateWindow,
     diagnostics: retrieval.diagnostics,
     embeddings,
-    // What the profile may read beside the block: exactly the records offered.
-    relatedClaimIds: selected.map((one) => one.memory.id),
     selected,
     semanticBranchAvailable: embeddings.length > 0,
   };
