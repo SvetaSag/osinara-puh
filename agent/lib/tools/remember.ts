@@ -108,7 +108,8 @@ export default defineTool({
           sourceKind: source?.isCurrent === true ? "current" : requestedSourceKind,
           threadAction: input.thread?.action ?? "none",
         });
-        return memoryNeighbourRefusalResult(error);
+        // The gate runs inside the write, so the source is resolved by the time it refuses.
+        return memoryNeighbourRefusalResult(error, { editAvailable: source !== null && !source.isReview });
       }
       const errorCode = isAppError(error)
         ? error.code
@@ -135,7 +136,10 @@ export default defineTool({
       item: toModelMemory(item),
       ...(item.supersededRefs === undefined ? {} : { supersededRefs: item.supersededRefs }),
       ...(item.thread === undefined ? {} : { thread: item.thread }),
-      notice: `Сохранено в область «${scope}». Для немедленной отмены используй manage_memory с action undo и memoryRef ${item.memoryRef}.`,
+      // The silent review has no manage_memory, so an undo hint would send it after a missing tool.
+      notice: source.isReview
+        ? `Сохранено в область «${scope}».`
+        : `Сохранено в область «${scope}». Для немедленной отмены используй manage_memory с action undo и memoryRef ${item.memoryRef}.`,
     };
   },
 });
