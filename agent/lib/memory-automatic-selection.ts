@@ -19,7 +19,7 @@ import { memoryFailureCode } from "./memory-context-failure.js";
 import { withAssistantName } from "./memory-persona-query.js";
 import { withQueryAliases } from "./memory-query-aliases.js";
 import type { MemoryAuthorization } from "./memory-context.js";
-import { MEMORY_RETRIEVAL_LIMIT } from "./memory-config.js";
+import { MEMORY_TURN_SELECTION_LIMIT } from "./memory-config.js";
 import type { ReferencedMemoryItem } from "./memory-record.js";
 import { memoryRetrievalRepository } from "./memory-retrieval-repository.js";
 import type {
@@ -134,7 +134,7 @@ export async function selectMemoriesAutomatically(
       semanticBranchAvailable: true,
     };
   }
-  const limit = options.limit ?? MEMORY_RETRIEVAL_LIMIT;
+  const limit = options.limit ?? MEMORY_TURN_SELECTION_LIMIT;
   // Slang read in plain words too (memory-query-aliases.ts); in a group «ты» is the assistant, and
   // its records carry its name (memory-persona-query.ts).
   const withAliases = withQueryAliases(prepared);
