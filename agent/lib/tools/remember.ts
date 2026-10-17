@@ -14,6 +14,7 @@ import {
 } from "../memory-context.js";
 import { memoryRepository } from "../memory-repository.js";
 import { logMemoryWriteEvent } from "../memory-observability.js";
+import { bindSourceAuthorLabel } from "../memory-subject-author-label.js";
 import { resolveMemoryTurnSource } from "../memory-turn-source.js";
 import { toModelMemory } from "../model-memory.js";
 import {
@@ -56,8 +57,13 @@ export default defineTool({
     }
     let source: Awaited<ReturnType<typeof resolveMemoryTurnSource>> | null = null;
     let item: Awaited<ReturnType<typeof memoryRepository.create>>;
+    let authorLabelBound = false;
     try {
       source = await resolveMemoryTurnSource(ctx, authorization, input.sourceSequence);
+      // Bound before anything reads the subject: the duplicate check, the replay key and the
+      // profile then see the verified author, exactly as if the model had said current_author.
+      const subject = bindSourceAuthorLabel(input.subject, source.author);
+      authorLabelBound = subject !== input.subject;
       const reviewWrite = source.isReview;
       const reviewBatchId = reviewWrite ? memoryReviewBatchId(ctx) : null;
       if (reviewWrite && !reviewBatchId) throw new AppError(
@@ -82,7 +88,7 @@ export default defineTool({
         content: requireAllowedMemoryContent(input.content),
         explicitSource: {
           conversationId: source.conversationId,
-          subject: input.subject,
+          subject,
           timelineEntryId: source.timelineEntryId,
         },
         kind: input.kind,
@@ -127,6 +133,7 @@ export default defineTool({
       throw error;
     }
     logMemoryWriteEvent({
+      ...(authorLabelBound ? { authorLabelBound: true as const } : {}),
       code: "AGENT_MEMORY_WRITE_SUCCEEDED",
       scope,
       sourceKind: source.isCurrent ? "current" : "delta",
