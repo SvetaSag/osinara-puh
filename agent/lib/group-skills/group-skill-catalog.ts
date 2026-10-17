@@ -27,7 +27,7 @@ export const GROUP_SAFE_SKILL_NAMES = Object.freeze(installedNames) as readonly 
 export type GroupSafeSkillName = string;
 
 // Executable skill dependencies are owner-visible and saved with the group's tool policy.
-const BASH_SKILLS = new Set(["agent-browser", "docx", "pdf", "xlsx", "t-invest", "find-docs"]);
+const BASH_SKILLS = new Set(["agent-browser", "docx", "pdf", "xlsx", "find-docs"]);
 export function skillRequiresBash(name: string): boolean { return BASH_SKILLS.has(name); }
 
 export function isGroupSafeSkillName(value: string): boolean {

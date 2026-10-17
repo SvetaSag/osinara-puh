@@ -73,7 +73,7 @@ const channelAuth: SessionAuth = {
       groupType: "external",
       memoryScopes: ["group"],
       role: "external",
-      skillAllowlist: ["pohuy"],
+      skillAllowlist: ["behavior-preferences"],
       telegramActorId: "-1001783384254",
       telegramActorKind: "telegram_channel",
       telegramChatType: "supergroup",

@@ -50,11 +50,11 @@ function auth(
 
 describe("group skill policy", () => {
   it("lists installed skills and rejects corrupt persisted lists", async () => {
-    expect(GROUP_SAFE_SKILL_NAMES).toEqual(expect.arrayContaining(["pohuy", "agent-browser", "docx", "pdf", "xlsx"]));
-    expect(parseGroupSkillAllowlist(["pohuy", "weather"])).toEqual(new Set(["pohuy", "weather"]));
+    expect(GROUP_SAFE_SKILL_NAMES).toEqual(expect.arrayContaining(["behavior-preferences", "agent-browser", "docx", "pdf", "xlsx"]));
+    expect(parseGroupSkillAllowlist(["behavior-preferences", "weather"])).toEqual(new Set(["behavior-preferences", "weather"]));
     expect(parseGroupSkillAllowlist(["../escape"])).toBeNull();
-    expect(parseGroupSkillAllowlist(["pohuy", "pohuy"])).toBeNull();
-    expect(Object.keys(await resolveConversationSkills(auth("external", ["weather", "pohuy"])))).toEqual(["pohuy"]);
+    expect(parseGroupSkillAllowlist(["behavior-preferences", "behavior-preferences"])).toBeNull();
+    expect(Object.keys(await resolveConversationSkills(auth("external", ["weather", "behavior-preferences"])))).toEqual(["behavior-preferences"]);
   });
 
   it("gives private and family conversations all installed skills while external grants stay exact", async () => {
@@ -70,14 +70,14 @@ describe("group skill policy", () => {
   it("uses the verified external grant snapshot for the whole turn", async () => {
     const resolve = resolveConversationSkills;
 
-    await expect(resolve(auth("external", ["pohuy"]))).resolves.toHaveProperty("pohuy");
+    await expect(resolve(auth("external", ["behavior-preferences"]))).resolves.toHaveProperty("behavior-preferences");
     await expect(resolve(auth("external"))).resolves.toEqual({});
   });
 
   it("keeps safe skills available in private chat without a group database lookup", async () => {
     const resolve = resolveConversationSkills;
 
-    await expect(resolve(auth("private"))).resolves.toHaveProperty("pohuy");
+    await expect(resolve(auth("private"))).resolves.toHaveProperty("behavior-preferences");
     const skills = await resolve(auth("private"));
     expect(skills).toHaveProperty("imagegen");
     await expect(resolve(auth("private"), { subagent: true })).resolves.not.toHaveProperty("imagegen");
@@ -99,9 +99,9 @@ describe("group skill policy", () => {
   it("does not advertise trusted-only Google Workspace skills to an external group", async () => {
     const resolve = resolveConversationSkills;
 
-    const skills = await resolve(auth("external", ["pohuy"]));
+    const skills = await resolve(auth("external", ["behavior-preferences"]));
 
-    expect(skills).toHaveProperty("pohuy");
+    expect(skills).toHaveProperty("behavior-preferences");
     for (const name of TRUSTED_GOOGLE_WORKSPACE_SKILL_NAMES) {
       expect(skills).not.toHaveProperty(name);
     }

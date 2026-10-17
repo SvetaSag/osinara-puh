@@ -300,7 +300,7 @@ export default defineTool({
         skillRequirements: Object.fromEntries(skillNames.map((name) => [name, {
           tools: skillNeedsBash(catalog, name) ? ["bash"] : [],
           ...(isWorkingSkill(catalog, name) ? {} : { disabledFamilySkill: true }),
-          ...(name.startsWith("gws-") || name === "t-invest" ? { connectionRequired: true, externalConnectionAvailable: false } : {}),
+          ...(name.startsWith("gws-") ? { connectionRequired: true, externalConnectionAvailable: false } : {}),
         }])),
         groups: groups.map((group) => {
           if (group.type === "family_private") {
