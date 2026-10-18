@@ -1,6 +1,12 @@
-/** Static runner-owned program; directory descriptors prevent redirection through mutable parents. */
+/**
+ * Static runner-owned program; directory descriptors prevent redirection through mutable parents.
+ *
+ * Each written package becomes an exact copy: files outside its manifest are removed from its
+ * directory. With `keep`, every entry of the skill root outside that name list is removed too.
+ */
 export const SKILL_SYNC_PROGRAM = String.raw`
 const fs=require('node:fs/promises'),path=require('node:path'),crypto=require('node:crypto'),flags=require('node:fs').constants;
+const NAME=/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/,STAGING=/^\.osinara-skill-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 async function main(){
   if(!process.env.HOME||!path.isAbsolute(process.env.HOME))throw new Error('AGENT_SKILL_SYNC_HOME_INVALID');
   const chunks=[];let inputBytes=0;
@@ -56,23 +62,35 @@ async function main(){
     try{for(const child of await fs.readdir('/proc/self/fd/'+handle.fd))await removeEntry(handle,child)}finally{await handle.close()}
     await fs.rmdir(target);return true;
   }
+  async function pruneTree(handle,prefix,files){
+    let count=0;
+    for(const name of await fs.readdir('/proc/self/fd/'+handle.fd)){
+      const relative=prefix?prefix+'/'+name:name,info=await fs.lstat(entry(handle,name));
+      if(info.isDirectory()&&!info.isSymbolicLink()&&files.some(file=>file.startsWith(relative+'/'))){
+        const child=await fs.open(entry(handle,name),directoryFlags);
+        try{count+=await pruneTree(child,relative,files)}finally{await child.close()}
+      }else if(!(info.isFile()&&files.includes(relative))&&await removeEntry(handle,name))count++;
+    }
+    return count;
+  }
   const writes=[];let checked=0,removed=0;
   try{
     for(const pkg of request.packages){
-      if(!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(pkg.name))throw new Error('AGENT_SKILL_SYNC_NAME_INVALID');
+      if(!NAME.test(pkg.name))throw new Error('AGENT_SKILL_SYNC_NAME_INVALID');
       for(const file of pkg.files){
         if(file.path.includes('\\')||file.path.includes('\0')||file.path.split('/').some(p=>!p||p==='.'||p==='..'))throw new Error('AGENT_SKILL_SYNC_PATH_INVALID');
         const target=path.join(root,pkg.name,file.path),bytes=Buffer.from(file.contentBase64,'base64'),parent=await directory(path.dirname(target),false);
         checked++;if(!parent||!await matches(parent,path.basename(target),bytes))writes.push({target,bytes});
       }
     }
-    for(const name of request.removed)if(!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(name))throw new Error('AGENT_SKILL_SYNC_NAME_INVALID');
+    const keep=request.keep===undefined?null:request.keep;
+    if(keep&&keep.some(name=>!NAME.test(name)))throw new Error('AGENT_SKILL_SYNC_NAME_INVALID');
     await verifyDirectories();
     const staging=await directory(root,writes.length>0);
     // A killed process cannot execute finally. Keep staging at one reserved root level so the
     // next volume-locked pass can reclaim leftovers without scanning arbitrary package trees.
     if(staging)for(const name of await fs.readdir('/proc/self/fd/'+staging.fd)){
-      if(!/^\.osinara-skill-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(name))continue;
+      if(!STAGING.test(name))continue;
       const target=entry(staging,name),info=await fs.lstat(target);
       if(info.isFile()||info.isSymbolicLink())await fs.unlink(target);
     }
@@ -81,7 +99,15 @@ async function main(){
       try{await fs.writeFile(temporary,bytes,{flag:'wx',mode:0o644});await fs.rename(temporary,entry(parent,path.basename(target)))}finally{await fs.rm(temporary,{force:true})}
     }
     const parent=await directory(root,false);
-    if(parent)for(const name of request.removed)if(await removeEntry(parent,name))removed++;
+    if(parent){
+      for(const pkg of request.packages){
+        const own=await directory(path.join(root,pkg.name),false);
+        if(own)removed+=await pruneTree(own,'',pkg.files.map(file=>file.path));
+      }
+      if(keep)for(const name of await fs.readdir('/proc/self/fd/'+parent.fd)){
+        if(!keep.includes(name)&&!STAGING.test(name)&&await removeEntry(parent,name))removed++;
+      }
+    }
     await verifyDirectories();
     process.stdout.write(JSON.stringify({checked,written:writes.length,removed}));
   }finally{await Promise.all([...directories.values()].map(value=>value.handle.close()))}
