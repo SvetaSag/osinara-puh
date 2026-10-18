@@ -1,6 +1,6 @@
 /** Real filesystem integrity checks, with no Docker or application processes. */
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, truncate, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -138,7 +138,7 @@ describe("verified skill synchronization", () => {
     } finally { await rm(home, { force: true, recursive: true }); }
   });
 
-  it("rejects a symlink instead of reading or overwriting its target", async () => {
+  it("replaces a symlink with the reviewed file without reading or overwriting its target", async () => {
     const home = await mkdtemp(join(tmpdir(), "osinara-skill-sync-"));
     try {
       const packages = [{ name: "test", files: [{ path: "SKILL.md", contentBase64: Buffer.from("reviewed").toString("base64") }] }];
@@ -146,8 +146,32 @@ describe("verified skill synchronization", () => {
       const path = join(home, ".agents/skills/test/SKILL.md");
       const target = join(home, "private-data"); await writeFile(target, "secret");
       await rm(path); await symlink(target, path);
-      await expect(sync(home, packages)).rejects.toThrow("AGENT_SKILL_SYNC_PATH_UNSAFE");
+      await sync(home, packages);
+      expect((await lstat(path)).isFile()).toBe(true);
+      expect(await readFile(path, "utf8")).toBe("reviewed");
       expect(await readFile(target, "utf8")).toBe("secret");
+    } finally { await rm(home, { force: true, recursive: true }); }
+  });
+
+  it("writes a version where a file became a folder, a folder a file, or the skill directory a link", async () => {
+    const home = await mkdtemp(join(tmpdir(), "osinara-skill-sync-"));
+    const root = join(home, ".agents/skills");
+    const outside = join(home, "outside");
+    const file = (path: string, text: string) => ({ path, contentBase64: Buffer.from(text).toString("base64") });
+    try {
+      await sync(home, [{ name: "test", files: [file("SKILL.md", "v1"), file("templates", "flat"), file("data/a.md", "a")] }]);
+      await sync(home, [{ name: "test", files: [file("SKILL.md", "v2"), file("templates/a.md", "nested"), file("data", "flat")] }], ["test"]);
+      expect(await readFile(join(root, "test/templates/a.md"), "utf8")).toBe("nested");
+      expect(await readFile(join(root, "test/data"), "utf8")).toBe("flat");
+
+      await mkdir(outside); await writeFile(join(outside, "SKILL.md"), "private");
+      await rm(join(root, "test"), { recursive: true }); await symlink(outside, join(root, "test"));
+      await symlink(outside, join(root, "kept-link"));
+      await sync(home, [{ name: "test", files: [file("SKILL.md", "v3")] }], ["test", "kept-link"]);
+      expect((await lstat(join(root, "test"))).isDirectory()).toBe(true);
+      expect(await readFile(join(root, "test/SKILL.md"), "utf8")).toBe("v3");
+      expect(await readdir(root)).toEqual(["test"]);
+      expect(await readFile(join(outside, "SKILL.md"), "utf8")).toBe("private");
     } finally { await rm(home, { force: true, recursive: true }); }
   });
 });

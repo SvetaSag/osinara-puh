@@ -11,6 +11,7 @@
  * - `telegramGroupAdministrationRepository`: family-scoped group lifecycle operations.
  */
 import {
+  FAMILY_SKILLS_LOCK_HASH_SEED,
   SESSION_GROUP_ROTATION_LOCK_HASH_SEED,
   TELEGRAM_GROUP_TRUST_LOCK_HASH_SEED,
 } from "../config.js";
@@ -162,6 +163,8 @@ export const telegramGroupAdministrationRepository: TelegramGroupAdministrationR
         throw new AppError("AGENT_OWNER_REQUIRED", "Это действие доступно только владельцу");
       }
 
+      // The family's skill list is read below: its lock comes first, as in every skill change.
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, $2))", [input.familyId, FAMILY_SKILLS_LOCK_HASH_SEED]);
       // Receipt-time media policy and trust-zone replacement share this chat-level lock.
       await client.query(
         "SELECT pg_advisory_xact_lock(hashtextextended($1, $2))",

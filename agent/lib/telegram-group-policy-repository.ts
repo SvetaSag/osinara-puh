@@ -6,7 +6,7 @@
  * Each skill list change sends the owner a notice (`family-skills/family-skill-notices.ts`).
  */
 import type { PoolClient } from "pg";
-import { SANDBOX_RUNNER_BASE_URL, TELEGRAM_GROUP_TRUST_LOCK_HASH_SEED } from "../config.js";
+import { FAMILY_SKILLS_LOCK_HASH_SEED, SANDBOX_RUNNER_BASE_URL, TELEGRAM_GROUP_TRUST_LOCK_HASH_SEED } from "../config.js";
 import { AppError } from "./app-error.js";
 import { database } from "./database.js";
 import { enqueueFamilySkillNotice } from "./family-skills/family-skill-notices.js";
@@ -43,6 +43,9 @@ export async function updateGroupPermissions(
       [input.familyId, input.requestedBy],
     );
     if (!owner.rowCount) throw new AppError("AGENT_OWNER_REQUIRED", "Это действие доступно только владельцу");
+    // The family's skill lock first, in the same order as every skill change: a skill deleted meanwhile
+    // cannot stay on this list and be granted again to a later skill under its name.
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,$2))", [input.familyId, FAMILY_SKILLS_LOCK_HASH_SEED]);
     await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,$2))", [input.telegramChatId, TELEGRAM_GROUP_TRUST_LOCK_HASH_SEED]);
     const result = await client.query<{
       id: string; family_id: string; type: string; message_mode: string; skill_allowlist: string[]; title: string; tool_allowlist: string[];

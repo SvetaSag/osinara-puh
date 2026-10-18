@@ -13,6 +13,8 @@
 import { defineTool } from "../../runtime/tool.js";
 import { z } from "zod";
 
+import { isScheduledSession } from "../agent-schedules/scheduled-session.js";
+import { AppError } from "../app-error.js";
 import { requirePrivateTelegramOwner } from "../family-context.js";
 import type { RegisteredGroupType } from "../family-access.js";
 import { SKILL_NAME_PATTERN } from "../../runtime/skills/package-validation.js";
@@ -384,6 +386,12 @@ export default defineTool({
       };
     }
     if (parsed.action === "update_skills") {
+      // Without a button only the owner's own conversation may change what outsiders get: a schedule
+      // or a delegated task (which reads untrusted pages) never does.
+      if (ctx.session.parent !== undefined || isScheduledSession(ctx)) {
+        throw new AppError("AGENT_GROUP_SKILLS_CONVERSATION_REQUIRED",
+          "Скиллы группы владелец меняет сам в личном разговоре с агентом, а не расписание или вспомогательная задача");
+      }
       const { skillAllowlist, telegramChatId } = parsed;
       const result = await telegramGroupAdministrationRepository.updateSkills({
         familyId: owner.familyId,

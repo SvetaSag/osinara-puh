@@ -1,98 +1,88 @@
 /**
- * The skills of a turn without a sandbox until a skill with files is loaded.
+ * The skills of a step without a sandbox until a skill with files is loaded.
  *
  * Constructs covered:
- * - `createTurnSkillLoader`: instructions-only skills never open the sandbox; a skill with files is
- *   written alone, with the turn's skill list as the keep list for a root turn and none for a child;
- *   a skill not granted, or withdrawn since the turn listed it, is refused by name.
- * - `tidySkillRoot`: an empty package list with the granted names.
+ * - `createStepSkillAccess`: instructions-only skills never open the sandbox; a skill with files is
+ *   written alone; a live conversation tidies the skill root on its first sandbox use, keeping only
+ *   the granted skills that have files; a schedule or a delegated task only adds; a skill not granted,
+ *   or withdrawn since the turn listed it, is refused by name; definitions are read once per step.
  */
 import { describe, expect, it, vi } from "vitest";
 
 import type { RuntimeSandboxSession } from "../sandbox/types.js";
 import type { SkillDefinition } from "../skills/definition.js";
-import { createTurnSkillLoader, tidySkillRoot } from "./turn-skills.js";
+import { createStepSkillAccess } from "./turn-skills.js";
 
 const DEFINITIONS: Record<string, SkillDefinition> = {
   digest: { description: "Сводки", markdown: "Пиши коротко." },
   pdf: { description: "PDF", files: { "forms.md": "Формы", "scripts/fill.py": "print()" }, markdown: "Заполняй формы." },
 };
 
-function fakeSandbox() {
+function access(options: { granted?: string[]; tidy?: boolean; definitions?: Record<string, SkillDefinition> } = {}) {
   const syncSkills = vi.fn<RuntimeSandboxSession["syncSkills"]>(async () => undefined);
-  return { sandbox: { syncSkills } as unknown as RuntimeSandboxSession, syncSkills };
-}
-
-function loader(options: { granted?: string[]; tidy?: boolean; definitions?: Record<string, SkillDefinition> } = {}) {
-  const { sandbox, syncSkills } = fakeSandbox();
-  const open = vi.fn(async () => sandbox);
+  const sandbox = { syncSkills } as unknown as RuntimeSandboxSession;
+  const openSandbox = vi.fn(async () => sandbox);
   const resolveDefinitions = vi.fn(async () => options.definitions ?? DEFINITIONS);
-  const skills = createTurnSkillLoader({
-    granted: options.granted ?? ["digest", "pdf"],
-    resolveDefinitions,
-    sandbox: open,
-    tidy: options.tidy ?? true,
+  const step = createStepSkillAccess({
+    granted: options.granted ?? ["digest", "pdf"], openSandbox, resolveDefinitions, tidy: options.tidy ?? true,
   });
-  return { open, resolveDefinitions, skills, syncSkills };
+  const calls = () => syncSkills.mock.calls.map(([packages, keep]) => ({
+    keep, packages: packages.map((pkg) => [pkg.name, pkg.files.map((file) => file.relativePath)]),
+  }));
+  return { calls, openSandbox, resolveDefinitions, step };
 }
 
-describe("turn skill loader", () => {
+describe("step skill access", () => {
   it("returns an instructions-only skill without opening the sandbox", async () => {
-    const { open, skills } = loader();
+    const { openSandbox, step } = access();
 
-    await expect(skills.load("digest")).resolves.toEqual({ files: null, markdown: "Пиши коротко." });
-    expect(open).not.toHaveBeenCalled();
+    await expect(step.loadSkill("digest")).resolves.toEqual({ files: null, markdown: "Пиши коротко." });
+    expect(openSandbox).not.toHaveBeenCalled();
   });
 
-  it("writes only the loaded skill's package and keeps exactly the turn's skills in a root turn", async () => {
-    const { skills, syncSkills } = loader();
+  it("tidies once on the first sandbox use, then writes only the loaded skill, keeping the skills with files", async () => {
+    const { calls, openSandbox, step } = access();
 
-    await expect(skills.load("pdf")).resolves.toEqual({
+    await expect(step.loadSkill("pdf")).resolves.toEqual({
       files: { directory: "$HOME/.agents/skills/pdf", paths: ["forms.md", "scripts/fill.py"] },
       markdown: "Заполняй формы.",
     });
-    expect(syncSkills).toHaveBeenCalledOnce();
-    const [packages, keep] = syncSkills.mock.calls[0]!;
-    expect(packages.map((pkg) => [pkg.name, pkg.files.map((file) => file.relativePath)]))
-      .toEqual([["pdf", ["SKILL.md", "forms.md", "scripts/fill.py"]]]);
-    expect(keep).toEqual(["digest", "pdf"]);
+    await step.getSandbox();
+    expect(openSandbox).toHaveBeenCalledOnce();
+    expect(calls()).toEqual([
+      { keep: ["pdf"], packages: [] },
+      { keep: ["pdf"], packages: [["pdf", ["SKILL.md", "forms.md", "scripts/fill.py"]]] },
+    ]);
   });
 
-  it("only adds the package in a delegated child, which shares its parent's sandbox", async () => {
-    const { skills, syncSkills } = loader({ tidy: false });
+  it("only adds in a schedule or a delegated task, which share the home with live turns", async () => {
+    const { calls, step } = access({ tidy: false });
 
-    await skills.load("pdf");
-    expect(syncSkills.mock.calls[0]![1]).toBeNull();
+    await step.getSandbox();
+    await step.loadSkill("pdf");
+    expect(calls()).toEqual([{ keep: null, packages: [["pdf", ["SKILL.md", "forms.md", "scripts/fill.py"]]] }]);
   });
 
   it("refuses a skill the turn does not list and names the listed ones", async () => {
-    const { resolveDefinitions, skills } = loader();
+    const { resolveDefinitions, step } = access();
 
-    await expect(skills.load("secret")).rejects.toThrow('No skill named "secret". Available skills: digest, pdf.');
+    await expect(step.loadSkill("secret")).rejects.toThrow('No skill named "secret". Available skills: digest, pdf.');
     expect(resolveDefinitions).not.toHaveBeenCalled();
   });
 
   it("refuses a listed skill withdrawn after the turn listed it", async () => {
-    const { skills, syncSkills } = loader({ definitions: { digest: DEFINITIONS.digest! } });
+    const { calls, step } = access({ definitions: { digest: DEFINITIONS.digest! } });
 
-    await expect(skills.load("pdf")).rejects.toThrow('No skill named "pdf".');
-    expect(syncSkills).not.toHaveBeenCalled();
+    await expect(step.loadSkill("pdf")).rejects.toThrow('No skill named "pdf".');
+    expect(calls()).toEqual([]);
   });
 
-  it("reads the definitions once per loader", async () => {
-    const { resolveDefinitions, skills } = loader();
+  it("reads the definitions once per step", async () => {
+    const { resolveDefinitions, step } = access();
 
-    await skills.load("digest");
-    await skills.load("pdf");
+    await step.getSandbox();
+    await step.loadSkill("digest");
+    await step.loadSkill("pdf");
     expect(resolveDefinitions).toHaveBeenCalledOnce();
-  });
-});
-
-describe("skill root tidying", () => {
-  it("sends no package and the granted names as the keep list", async () => {
-    const { sandbox, syncSkills } = fakeSandbox();
-
-    await tidySkillRoot(sandbox, ["pdf"]);
-    expect(syncSkills).toHaveBeenCalledWith([], ["pdf"]);
   });
 });

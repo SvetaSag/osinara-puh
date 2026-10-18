@@ -92,6 +92,20 @@ async function enabledUsers(client: PoolClient, skillId: string): Promise<string
   )).rows.map((row) => row.user_id);
 }
 
+/**
+ * Who hears of a change to a skill: the person making it, everyone who has it enabled and, when an
+ * external group's list holds it, the owner — outsiders get it on the owner's word.
+ */
+async function concerned(client: PoolClient, actor: FamilySkillActor, skillId: string, name: string): Promise<FamilySkillNoticeRecipient[]> {
+  const owners = (await client.query<{ user_id: string }>(
+    `SELECT membership.user_id FROM family_memberships membership
+      WHERE membership.family_id = $1 AND membership.role = 'owner'
+        AND EXISTS (SELECT 1 FROM telegram_groups WHERE family_id = $1 AND type = 'external' AND $2 = ANY(skill_allowlist))`,
+    [actor.familyId, name],
+  )).rows.map((row) => row.user_id);
+  return [actor.userId, ...await enabledUsers(client, skillId), ...owners].map((userId) => ({ userId }));
+}
+
 async function audit(client: PoolClient, actor: FamilySkillActor, eventType: string, skillId: string, metadata: object): Promise<void> {
   await client.query(
     `INSERT INTO audit_events (family_id, actor_user_id, event_type, subject_id, metadata) VALUES ($1, $2, $3, $4, $5)`,
@@ -206,7 +220,8 @@ export const familySkillChanges = {
       const before = await storedContent(client, row.id, previousVersion);
       await client.query("UPDATE family_skills SET active_version = $2, updated_at = now() WHERE id = $1", [row.id, version]);
       await pruneOldVersions(client, row.id);
-      if (newSkill) {
+      // A new skill, or one stored before versions became current on save, starts enabled for its saver.
+      if (newSkill || previousVersion === null) {
         await client.query("INSERT INTO family_skill_activations (skill_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [row.id, actor.userId]);
       }
       await audit(client, actor, "family_skill.saved", row.id, { name: skill.name, origin: input.origin.kind, previousVersion, version });
@@ -225,7 +240,7 @@ export const familySkillChanges = {
           ...(newVersion ? [originLine(input.origin)] : []),
           `Вернуть прежнюю версию: «откати ${skill.name}».`,
         ].join("\n");
-      await notify(client, actor, [{ userId: actor.userId }, ...(await enabledUsers(client, row.id)).map((userId) => ({ userId }))], text);
+      await notify(client, actor, await concerned(client, actor, row.id, skill.name), text);
       return { newSkill, newVersion, previousVersion, version };
     });
   },
@@ -244,7 +259,7 @@ export const familySkillChanges = {
       const before = await storedContent(client, skill.id, skill.active_version);
       await client.query("UPDATE family_skills SET active_version = $2, updated_at = now() WHERE id = $1", [skill.id, version]);
       await audit(client, actor, "family_skill.rolled_back", skill.id, { name, previousVersion: skill.active_version, version });
-      await notify(client, actor, [{ userId: actor.userId }, ...(await enabledUsers(client, skill.id)).map((userId) => ({ userId }))], [
+      await notify(client, actor, await concerned(client, actor, skill.id, name), [
         `Скилл «${name}» возвращён к версии ${version}${skill.active_version === null ? "" : ` вместо ${skill.active_version}`} (изменил: ${member.displayName}).`,
         `Что поменялось: ${describeParts(changedParts(before, target))}.`,
       ].join("\n"));
@@ -311,7 +326,7 @@ export const familySkillChanges = {
       const skill = await lockedSkill(client, actor.familyId, name);
       if (skill === undefined) throw familySkillNotFound(name);
       await requireSkillEditor(client, actor, member, skill, name);
-      const users = await enabledUsers(client, skill.id);
+      const recipients = await concerned(client, actor, skill.id, name);
       await client.query("DELETE FROM family_skills WHERE id = $1", [skill.id]);
       // A later skill under the same name must not be granted by an old list entry.
       await client.query(
@@ -323,8 +338,7 @@ export const familySkillChanges = {
         `INSERT INTO audit_events (family_id, actor_user_id, event_type, metadata) VALUES ($1, $2, 'family_skill.deleted', $3)`,
         [actor.familyId, actor.userId, { name }],
       );
-      await notify(client, actor, [{ userId: actor.userId }, ...users.map((userId) => ({ userId }))],
-        `Скилл «${name}» удалён из библиотеки семьи (удалил: ${member.displayName}).`);
+      await notify(client, actor, recipients, `Скилл «${name}» удалён из библиотеки семьи (удалил: ${member.displayName}).`);
     });
   },
 };

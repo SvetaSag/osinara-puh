@@ -112,8 +112,26 @@ export async function dispatchFamilySkillNotices(send: FamilySkillNoticeSender =
   } finally {
     client.release();
   }
-  for (const notice of claimed) {
-    const chatId = await recipientChat(notice);
+  for (const [index, notice] of claimed.entries()) {
+    let chatId: string | null;
+    try {
+      chatId = await recipientChat(notice);
+      // The stale window counts from this notice's own send, not from the claim of the whole batch.
+      await database().query(
+        "UPDATE family_skill_notices SET delivery_started_at = now() WHERE id = $1 AND delivery_token = $2",
+        [notice.id, notice.delivery_token],
+      );
+    } catch (error) {
+      // Nothing of this notice or the ones after it was sent: they go back to the queue for the next pass.
+      for (const unsent of claimed.slice(index)) {
+        await database().query(
+          `UPDATE family_skill_notices SET status = 'pending', delivery_token = NULL, updated_at = now()
+            WHERE id = $1 AND delivery_token = $2 AND status = 'delivering'`,
+          [unsent.id, unsent.delivery_token],
+        );
+      }
+      throw error;
+    }
     let status: "ambiguous" | "delivered" | "failed" = "failed";
     if (chatId !== null) {
       try {

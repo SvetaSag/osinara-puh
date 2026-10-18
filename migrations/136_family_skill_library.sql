@@ -54,3 +54,7 @@ CREATE TABLE family_skill_notices (
   CHECK ((status = 'delivering') = (delivery_token IS NOT NULL))
 );
 CREATE INDEX family_skill_notices_pending ON family_skill_notices (created_at, id) WHERE status = 'pending';
+
+-- «Сколько раз скилл загружали за 30 дней» считается по журналу вызовов: без индекса каждый список
+-- скиллов читал бы весь журнал, который не чистится.
+CREATE INDEX agent_tool_calls_load_skill_created_at ON agent_tool_calls (created_at) WHERE tool_name = 'load_skill';

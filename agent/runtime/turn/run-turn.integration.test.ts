@@ -357,9 +357,10 @@ async function releaseRunner(turnId: string) {
 
     await run(toolCalls([{ id: "call-digest", input: { skill: "digest" }, name: "load_skill" }]), reply("ok"));
 
+    // Only skills with files keep a directory, so an instructions-only skill leaves no copy behind.
     expect(syncs).toEqual([
-      { keep: ["brief", "digest"], packages: [] },
-      { keep: ["brief", "digest"], packages: [{ files: ["SKILL.md", "references/a.md", "references/b.md"], name: "digest" }] },
+      { keep: ["digest"], packages: [] },
+      { keep: ["digest"], packages: [{ files: ["SKILL.md", "references/a.md", "references/b.md"], name: "digest" }] },
     ]);
     expect(JSON.stringify(await history(sessionId)))
       .toContain("Skill files: `$HOME/.agents/skills/digest/` (references/a.md, references/b.md).");

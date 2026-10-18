@@ -73,18 +73,30 @@ async function main(){
     }
     return count;
   }
+  async function realDirectory(parent,name){
+    try{const info=await fs.lstat(entry(parent,name));return info.isDirectory()&&!info.isSymbolicLink()?true:'other'}
+    catch(error){if(error.code==='ENOENT')return false;throw error}
+  }
   const writes=[];let checked=0,removed=0;
   try{
-    for(const pkg of request.packages){
-      if(!NAME.test(pkg.name))throw new Error('AGENT_SKILL_SYNC_NAME_INVALID');
-      for(const file of pkg.files){
-        if(file.path.includes('\\')||file.path.includes('\0')||file.path.split('/').some(p=>!p||p==='.'||p==='..'))throw new Error('AGENT_SKILL_SYNC_PATH_INVALID');
-        const target=path.join(root,pkg.name,file.path),bytes=Buffer.from(file.contentBase64,'base64'),parent=await directory(path.dirname(target),false);
-        checked++;if(!parent||!await matches(parent,path.basename(target),bytes))writes.push({target,bytes});
-      }
-    }
     const keep=request.keep===undefined?null:request.keep;
-    if(keep&&keep.some(name=>!NAME.test(name)))throw new Error('AGENT_SKILL_SYNC_NAME_INVALID');
+    for(const name of [...request.packages.map(pkg=>pkg.name),...(keep??[])])if(!NAME.test(name))throw new Error('AGENT_SKILL_SYNC_NAME_INVALID');
+    for(const pkg of request.packages)for(const file of pkg.files){
+      if(file.path.includes('\\')||file.path.includes('\0')||file.path.split('/').some(p=>!p||p==='.'||p==='..'))throw new Error('AGENT_SKILL_SYNC_PATH_INVALID');
+    }
+    // Before writing, a package's directory is made an exact copy of its manifest: what it held
+    // beyond the manifest goes, and so does an entry of the wrong kind (a file where a version now
+    // has a folder, a folder where it has a file, a link), which would otherwise block every write.
+    const existingRoot=await directory(root,false);
+    if(existingRoot)for(const pkg of request.packages){
+      const kind=await realDirectory(existingRoot,pkg.name);
+      if(kind==='other'){if(await removeEntry(existingRoot,pkg.name))removed++}
+      else if(kind)removed+=await pruneTree(await directory(path.join(root,pkg.name),false),'',pkg.files.map(file=>file.path));
+    }
+    for(const pkg of request.packages)for(const file of pkg.files){
+      const target=path.join(root,pkg.name,file.path),bytes=Buffer.from(file.contentBase64,'base64'),parent=await directory(path.dirname(target),false);
+      checked++;if(!parent||!await matches(parent,path.basename(target),bytes))writes.push({target,bytes});
+    }
     await verifyDirectories();
     const staging=await directory(root,writes.length>0);
     // A killed process cannot execute finally. Keep staging at one reserved root level so the
@@ -98,15 +110,11 @@ async function main(){
       const parent=await directory(path.dirname(target),true),temporary=entry(staging,'.osinara-skill-'+crypto.randomUUID());
       try{await fs.writeFile(temporary,bytes,{flag:'wx',mode:0o644});await fs.rename(temporary,entry(parent,path.basename(target)))}finally{await fs.rm(temporary,{force:true})}
     }
+    // Tidying: whatever is not a kept skill's real directory goes, links and stray files included.
     const parent=await directory(root,false);
-    if(parent){
-      for(const pkg of request.packages){
-        const own=await directory(path.join(root,pkg.name),false);
-        if(own)removed+=await pruneTree(own,'',pkg.files.map(file=>file.path));
-      }
-      if(keep)for(const name of await fs.readdir('/proc/self/fd/'+parent.fd)){
-        if(!keep.includes(name)&&!STAGING.test(name)&&await removeEntry(parent,name))removed++;
-      }
+    if(parent&&keep)for(const name of await fs.readdir('/proc/self/fd/'+parent.fd)){
+      if(STAGING.test(name)||(keep.includes(name)&&await realDirectory(parent,name)===true))continue;
+      if(await removeEntry(parent,name))removed++;
     }
     await verifyDirectories();
     process.stdout.write(JSON.stringify({checked,written:writes.length,removed}));

@@ -231,6 +231,12 @@ describeWithDatabase("family skill library", () => {
     await writeFolder(f, f.member, "skills/tides", { "SKILL.md": "---\nname: tides\ndescription: Приливы\n---\nТекст\n" });
     await save(f, f.member, { path: "skills/tides" });
     expect(await resolveConversationSkills(privateAuth(f, f.owner))).not.toHaveProperty("tides");
+    // Outsiders get a skill on the owner's word, so the owner hears when its author changes it.
+    await manageTelegramGroup.execute({ action: "update_skills", skillAllowlist: ["tides"], telegramChatId: f.groupChatId } as never,
+      context(privateAuth(f, f.owner)));
+    await writeFolder(f, f.member, "skills/tides", { "SKILL.md": "---\nname: tides\ndescription: Приливы v2\n---\nТекст\n" });
+    await save(f, f.member, { path: "skills/tides" });
+    expect((await notices({ userId: f.owner.id })).at(-1)).toContain("Скилл «tides» теперь работает в версии 2 вместо 1 (изменил: Dina 5503).");
     await run(f, f.owner, { action: "delete", name: "tides" });
     expect((await notices({ userId: f.member.id })).at(-1)).toBe("Скилл «tides» удалён из библиотеки семьи (удалил: Owner 5503).");
     await expect(run(f, f.member, { action: "list" })).resolves.toMatchObject({ family: [{ name: "weather", author: "Owner 5503", enabledForMe: false }] });
@@ -304,6 +310,15 @@ describeWithDatabase("family skill library", () => {
     expect(await groupSkillPolicyRepository.loadGroupSkillAllowlist(f.groupId)).toEqual(new Set(["pdf", "weather"]));
     await expect(manageTelegramGroup.execute({ action: "update_skills", skillAllowlist: [], telegramChatId: f.groupChatId } as never,
       context(privateAuth(f, f.member)))).rejects.toMatchObject({ code: "AGENT_OWNER_REQUIRED" });
+    // Without a button, neither a schedule nor a delegated task changes what outsiders get.
+    const ownerAuth = privateAuth(f, f.owner);
+    const scheduled = { ...ownerAuth.current!, attributes: { ...ownerAuth.current!.attributes, scheduledRunId: "run-1" } };
+    await expect(manageTelegramGroup.execute({ action: "update_skills", skillAllowlist: [], telegramChatId: f.groupChatId } as never,
+      context({ current: scheduled, initiator: scheduled } as SessionAuth))).rejects.toMatchObject({ code: "AGENT_GROUP_SKILLS_CONVERSATION_REQUIRED" });
+    const delegated = { ...context(ownerAuth), session: { ...context(ownerAuth).session, parent: { callId: "c", rootSessionId: "s", sessionId: "s", turn: { id: "t", sequence: 0 } } } };
+    await expect(manageTelegramGroup.execute({ action: "update_skills", skillAllowlist: [], telegramChatId: f.groupChatId } as never,
+      delegated as ToolContext)).rejects.toMatchObject({ code: "AGENT_GROUP_SKILLS_CONVERSATION_REQUIRED" });
+    expect(await groupSkillPolicyRepository.loadGroupSkillAllowlist(f.groupId)).toEqual(new Set(["pdf", "weather"]));
 
     // Deleting the skill takes it off the group's list: a later skill under the same name is not granted.
     await run(f, f.owner, { action: "delete", name: "weather" });
@@ -311,6 +326,21 @@ describeWithDatabase("family skill library", () => {
     const workspaceId = await workspaceBinaryRepository.workspaceId(requireWorkspaceAuthorization(context(await groupAuth(f))), "group");
     await expect(withGroupSandboxAccess(workspaceId, async () => "synced", undefined, ["weather"]))
       .rejects.toMatchObject({ code: "AGENT_GROUP_SKILL_FORBIDDEN" });
+  });
+
+  it("enables a skill stored before versions became current for whoever saves it now", async () => {
+    const f = await fixture("5513");
+    const skill = (await database().query<{ id: string }>(
+      "INSERT INTO family_skills (family_id, name, author_user_id) VALUES ($1, 'weather', $2) RETURNING id", [f.familyId, f.member.id],
+    )).rows[0]!;
+    await database().query(
+      `INSERT INTO family_skill_versions (skill_id, version, description, markdown, files, content_hash, origin_kind, created_by)
+       VALUES ($1, 1, 'Старый', 'Текст', '[]'::jsonb, repeat('a', 64), 'authored', $2)`, [skill.id, f.member.id],
+    );
+    await writeFolder(f, f.member, "skills/weather", { "SKILL.md": weather("Прогноз") });
+
+    await expect(save(f, f.member, { path: "skills/weather" })).resolves.toMatchObject({ status: "current_version_replaced", version: 2 });
+    expect(await resolveConversationSkills(privateAuth(f, f.member))).toHaveProperty("weather");
   });
 
   it("changes nothing for a person who left the family, even from an old session", async () => {

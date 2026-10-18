@@ -154,7 +154,7 @@ function toolContexts(
     granted: skills,
     openSandbox: () => runtime.sandbox({ auth: turn.auth, id: turn.sessionId }),
     resolveDefinitions: () => runtime.agent.resolveSkills({ channel: turn.channel, messages, session: { auth: turn.auth, id: turn.sessionId } }),
-    root: turn.kind !== "subagent",
+    tidy: turn.kind === "conversation",
   });
   return (call: { readonly callId: string; readonly toolName: string }): ToolContext => ({
     abortSignal, callId: call.callId, getSandbox, loadSkill, session, skills, state, toolName: call.toolName,

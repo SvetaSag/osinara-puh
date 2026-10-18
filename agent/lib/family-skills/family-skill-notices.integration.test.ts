@@ -62,6 +62,27 @@ async function statuses(): Promise<Record<string, string>> {
     await expect(dispatchFamilySkillNotices(send)).resolves.toBe(0);
   });
 
+  it("returns the unsent notices to the queue when a recipient lookup fails", async () => {
+    const f = await family();
+    for (const key of ["first", "second"]) {
+      await enqueueFamilySkillNotice(database(), { familyId: f.familyId, operationKey: key, recipient: { userId: f.member }, text: key });
+    }
+    const query = database().query.bind(database());
+    const lookup = vi.spyOn(database(), "query").mockImplementation((async (...args: unknown[]) => {
+      if (String(args[0]).includes("JOIN family_memberships membership")) throw new Error("connection reset");
+      return await (query as (...rest: unknown[]) => Promise<unknown>)(...args);
+    }) as never);
+    const send = vi.fn(async (_input: { chatId: string; text: string }) => undefined);
+
+    await expect(dispatchFamilySkillNotices(send)).rejects.toThrow("connection reset");
+    lookup.mockRestore();
+
+    expect(send).not.toHaveBeenCalled();
+    expect(await statuses()).toEqual({ first: "pending", second: "pending" });
+    await expect(dispatchFamilySkillNotices(send)).resolves.toBe(2);
+    expect(await statuses()).toEqual({ first: "delivered", second: "delivered" });
+  });
+
   it("never repeats a send whose outcome is unknown", async () => {
     const f = await family();
     for (const key of ["rejected", "unknown", "stale"]) {

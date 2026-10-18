@@ -42,6 +42,7 @@ describeWithDatabase("136 family skill library", () => {
           CHECK (NOT enabled OR active_version IS NOT NULL)
         );
         CREATE TABLE family_skill_versions (skill_id uuid NOT NULL, version integer NOT NULL, created_by uuid);
+        CREATE TABLE agent_tool_calls (tool_name text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
         INSERT INTO families VALUES ('00000000-0000-4000-8000-000000000001');
         INSERT INTO users VALUES ('00000000-0000-4000-8000-0000000000a1'), ('00000000-0000-4000-8000-0000000000a2');
         INSERT INTO family_skills (id, family_id, name, enabled, active_version) VALUES
