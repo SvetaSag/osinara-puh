@@ -48,7 +48,7 @@ describe("manage_telegram_group.update_skills", () => {
   beforeEach(() => {
     listStatuses.mockReset();
     updateSkills.mockReset();
-    updateSkills.mockResolvedValue({ groupId: "group-1", skillsNeedBash: false });
+    updateSkills.mockResolvedValue({ groupId: "group-1" });
   });
 
   it("replaces the exact group allowlist with reviewed skills", async () => {

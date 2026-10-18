@@ -56,7 +56,7 @@ import { orderStepTools, toModelToolSet } from "./model-tools.js";
 import { executeStepCalls, planStepCalls, type CallJournal } from "./step-calls.js";
 import { failParkedTurn, failTurn, ParkedTurnTakenOver } from "./turn-failure.js";
 import { storedTurnOutcome } from "./turn-observation.js";
-import { createTurnSkillLoader, prepareTurnSkills, tidySkillRoot } from "./turn-skills.js";
+import { createStepSkillAccess, prepareTurnSkills } from "./turn-skills.js";
 import { isEmptyDelivery, stepHistoryMessages, stepTextEvents } from "./step-history.js";
 import type { ToolResultOutput } from "./tool-calls.js";
 import type { PreparedTurn, ToolCallRecord, TurnRecord } from "./turn-types.js";
@@ -147,34 +147,17 @@ function toolContexts(
   runtime: TurnRuntime, turn: TurnRecord, parent: SessionParent | undefined, abortSignal: AbortSignal,
   messages: readonly ModelMessage[],
 ) {
-  let sandbox: Promise<RuntimeSandboxSession> | undefined;
   const session = sessionOf(turn, parent);
   const state = sessionToolState(runtime.database, turn.sessionId);
   const skills = requirePrepared(turn).skills.map((skill) => skill.name);
-  // A delegated child shares its parent's sandbox, so only a root turn removes what it does not grant.
-  const root = turn.kind !== "subagent";
-  const getSandbox = () => (sandbox ??= runtime.sandbox({ auth: turn.auth, id: turn.sessionId })
-    .then(async (opened) => {
-      if (root) await tidySkillRoot(opened, skills);
-      return opened;
-    }));
-  const skillLoader = createTurnSkillLoader({
+  const { getSandbox, loadSkill } = createStepSkillAccess({
     granted: skills,
-    resolveDefinitions: () => runtime.agent.resolveSkills({
-      channel: turn.channel, messages, session: { auth: turn.auth, id: turn.sessionId },
-    }),
-    sandbox: getSandbox,
-    tidy: root,
+    openSandbox: () => runtime.sandbox({ auth: turn.auth, id: turn.sessionId }),
+    resolveDefinitions: () => runtime.agent.resolveSkills({ channel: turn.channel, messages, session: { auth: turn.auth, id: turn.sessionId } }),
+    root: turn.kind !== "subagent",
   });
   return (call: { readonly callId: string; readonly toolName: string }): ToolContext => ({
-    abortSignal,
-    callId: call.callId,
-    getSandbox,
-    loadSkill: (name) => skillLoader.load(name),
-    session,
-    skills,
-    state,
-    toolName: call.toolName,
+    abortSignal, callId: call.callId, getSandbox, loadSkill, session, skills, state, toolName: call.toolName,
   });
 }
 

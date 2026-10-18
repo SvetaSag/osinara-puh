@@ -147,7 +147,7 @@ describe("manage_telegram_group.status", () => {
     expect(listStatuses).not.toHaveBeenCalled();
   });
 
-  it("skips HITL only for read-only status and non-destructive context rotation", () => {
+  it("skips HITL only for read-only status, context rotation and the skill list", () => {
     expect(approvalFor({ action: "status" })).toBe("not-applicable");
     expect(approvalFor({ action: "start_new_context", telegramChatId: "-1001" })).toBe("not-applicable");
     expect(approvalFor({
@@ -160,7 +160,7 @@ describe("manage_telegram_group.status", () => {
       action: "update_skills",
       skillAllowlist: [],
       telegramChatId: "-1001",
-    })).toBe("user-approval");
+    })).toBe("not-applicable");
     expect(approvalFor({ action: "remove", telegramChatId: "-1001" })).toBe("user-approval");
     expect(approvalFor({
       action: "register",

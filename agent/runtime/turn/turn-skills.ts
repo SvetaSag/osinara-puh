@@ -10,6 +10,7 @@
  *   exact copy before returning the instructions.
  * - `tidySkillRoot`: the first sandbox use of a root turn's step removes every skill directory the
  *   turn does not grant, whatever put it there.
+ * - `createStepSkillAccess`: the sandbox and the loader one step's tool contexts share.
  * - `TurnSkillLoader`, `SKILL_DIRECTORY_FOR_MODEL`.
  *
  * A delegated child shares its parent's sandbox: it writes the packages it loads and removes nothing.
@@ -73,4 +74,26 @@ export function createTurnSkillLoader(input: {
 
 export async function tidySkillRoot(sandbox: RuntimeSandboxSession, granted: readonly string[]): Promise<void> {
   await sandbox.syncSkills([], granted);
+}
+
+/**
+ * The sandbox and the skill loader one step's tools share. The sandbox opens on first use; a root
+ * turn tidies the skill root right then.
+ */
+export function createStepSkillAccess(input: {
+  readonly granted: readonly string[];
+  readonly openSandbox: () => Promise<RuntimeSandboxSession>;
+  readonly resolveDefinitions: () => Promise<Readonly<Record<string, SkillDefinition>>>;
+  /** A delegated child shares its parent's sandbox, so only a root turn removes what it does not grant. */
+  readonly root: boolean;
+}): { readonly getSandbox: () => Promise<RuntimeSandboxSession>; readonly loadSkill: (name: string) => Promise<LoadedSkill> } {
+  let sandbox: Promise<RuntimeSandboxSession> | undefined;
+  const getSandbox = () => (sandbox ??= input.openSandbox().then(async (opened) => {
+    if (input.root) await tidySkillRoot(opened, input.granted);
+    return opened;
+  }));
+  const loader = createTurnSkillLoader({
+    granted: input.granted, resolveDefinitions: input.resolveDefinitions, sandbox: getSandbox, tidy: input.root,
+  });
+  return { getSandbox, loadSkill: (name) => loader.load(name) };
 }

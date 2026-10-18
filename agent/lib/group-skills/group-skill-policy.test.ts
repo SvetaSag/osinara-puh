@@ -67,6 +67,16 @@ describe("group skill policy", () => {
     expect(await resolve(auth("external"))).toEqual({});
   });
 
+  it("gives the service skill-manager only to a person's own live private chat", async () => {
+    const resolve = resolveConversationSkills;
+
+    await expect(resolve(auth("private"))).resolves.toHaveProperty("skill-manager");
+    await expect(resolve(auth("private"), { subagent: true })).resolves.not.toHaveProperty("skill-manager");
+    await expect(resolve(auth("private"), { scheduledRun: true })).resolves.not.toHaveProperty("skill-manager");
+    await expect(resolve(auth("family"))).resolves.not.toHaveProperty("skill-manager");
+    await expect(resolve(auth("external", ["skill-manager"]))).resolves.not.toHaveProperty("skill-manager");
+  });
+
   it("uses the verified external grant snapshot for the whole turn", async () => {
     const resolve = resolveConversationSkills;
 

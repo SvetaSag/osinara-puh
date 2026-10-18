@@ -19,6 +19,7 @@ import { database } from "./database.js";
 import { stopGroupSandboxes, updateGroupPermissions } from "./telegram-group-policy-repository.js";
 import { grantableFamilySkills } from "./family-skills/family-skill-repository.js";
 import { skillGrantCatalog, skillNeedsBash } from "./family-skills/skill-grants.js";
+import { EXTERNAL_GROUP_BASE_SKILLS } from "./group-skills/group-skill-catalog.js";
 import type {
   RegisteredGroupType,
   StandardTelegramGroupMessageMode,
@@ -90,7 +91,7 @@ export interface TelegramGroupAdministrationRepository {
     requestedCanonicalSessions: number;
   }>;
   updatePolicy(input: TelegramGroupPolicyUpdate): Promise<{ groupId: string }>;
-  updateSkills(input: TelegramGroupSkillUpdate): Promise<{ groupId: string; skillsNeedBash: boolean }>;
+  updateSkills(input: TelegramGroupSkillUpdate): Promise<{ groupId: string }>;
 }
 
 export const telegramGroupAdministrationRepository: TelegramGroupAdministrationRepository = {
@@ -210,9 +211,12 @@ export const telegramGroupAdministrationRepository: TelegramGroupAdministrationR
           input.type,
           input.toolAllowlist,
           input.messageMode,
-          current?.type === input.type
-            ? current.skill_allowlist.filter((name) => input.toolAllowlist.includes("bash") || !skillNeedsBash(catalog, name))
-            : [],
+          (current?.type === input.type
+            ? current.skill_allowlist
+            // A new external group starts with the base set; a family group's list holds family skills only.
+            : input.type === "external" ? [...EXTERNAL_GROUP_BASE_SKILLS] : []
+          // A family group runs scripts under the family policy; an external one only with its own Bash.
+          ).filter((name) => input.type !== "external" || input.toolAllowlist.includes("bash") || !skillNeedsBash(catalog, name)),
         ],
       );
       const row = result.rows[0];
